@@ -1,0 +1,222 @@
+package com.msf.omnesys.servlets.listners;
+
+import com.msf.log.Logger;
+import com.msf.omnesys.business.fundtransfer.PaymentOptsManger;
+import com.msf.omnesys.common.TRSymbolMap;
+import com.msf.omnesys.datasource.db.EdisDBPool;
+import com.msf.omnesys.datasource.db.QuoteDataDBPool;
+import com.msf.omnesys.datasource.db.TradeDBPool;
+import com.msf.omnesys.edis.NonPoaClientDetails;
+import com.msf.omnesys.info.TRMessageFormatter;
+import com.msf.omnesys.monitor.OmnesysJMXBeans;
+import com.msf.sbu2.cache.SBU2SymbolCache;
+import com.msf.sbu2.jmx.Monitor;
+import com.msf.sbu2.monitor.NagiosPassiveMonitor;
+import com.msf.sbu2.service.auth.AuthManager;
+import com.msf.sbu2.service.common.SBU2RequestFields;
+import com.msf.sbu2.service.config.AppConfig;
+import com.msf.sbu2.service.config.InfoMessage;
+import com.msf.sbu2.service.constants.ProductType;
+import com.msf.sbu2.service.session.SessionDBPool;
+import com.msf.sbu2.symbology.Symbol;
+import com.msf.utils.helper.Helper;
+import org.apache.commons.configuration.ConfigurationException;
+
+import javax.servlet.ServletContext;
+import javax.servlet.ServletContextEvent;
+import javax.servlet.ServletContextListener;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.sql.Connection;
+import java.util.List;
+import java.util.Properties;
+
+public class ApplicationContextListener implements ServletContextListener {
+
+	private static Logger log;
+
+	public void contextInitialized(ServletContextEvent event) {
+		System.out.println("contextInitialized");
+		ServletContext ctx = event.getServletContext();
+		String classFolder = ctx.getRealPath("/") + "WEB-INF" + System.getProperty("file.separator") + "classes"
+				+ System.getProperty("file.separator");
+		String logFile = classFolder + "jslog.properties";
+
+		try {
+			setLogger(logFile);
+			log = Logger.getLogger(ApplicationContextListener.class);
+		} catch (Exception e) {
+			System.out.println("Not able to set Logger");
+		}
+
+		String configFile = classFolder + "config.properties";
+
+		try {
+			AppConfig.loadFile(configFile);
+		} catch (ConfigurationException e) {
+			log.error("Cannot load  config properties");
+			log.error("", e);
+		}
+
+		String infoMessageFile = classFolder + "InfoMessage.properties";
+		log.info("info message file " + infoMessageFile);
+
+		try {
+			InfoMessage.loadFile(infoMessageFile);
+
+		} catch (org.apache.commons.configuration.ConfigurationException e) {
+			log.error("Cannot load info message properties");
+			log.error("", e);
+		}
+
+		try {
+			log.info("Setting Auth files");
+
+			AuthManager.setPrivateKey(classFolder + "private_key.key");
+			AuthManager.setPublicKey(classFolder + "public_key.pem");
+
+		} catch (Exception e) {
+			log.error("Error Auth files" + e);
+		}
+
+		try {
+			ProductType.init();
+		}catch (Exception ex){
+			log.error("unable to load product");
+		}
+		if(AppConfig.optBoolean("tr.msg.format", false)) {
+		try {
+			String messageFormattingFile = classFolder + "ValidationMessages.json";
+			TRMessageFormatter.MsgArray = TRMessageFormatter.loadJSONFile(messageFormattingFile);
+		} catch (IOException e1) {
+			log.error("Not able to load ValidationMessage File");
+		}
+		
+		try {
+			String rejectReasonFile = classFolder + "RejectionMessages.json";
+			TRMessageFormatter.RejectReasonMsgArray = TRMessageFormatter.loadJSONFile(rejectReasonFile);
+		} catch (IOException e1) {
+			log.error("Not able to load RejectionMessages file ");
+		}
+		}
+
+		if(AppConfig.optBoolean("paymentmode.details", false)) {
+			String paymentConfigFile = classFolder + "PaymentOptionsConfig.json";
+			try {
+				PaymentOptsManger.loadJSONFile(paymentConfigFile);
+			} catch (Exception e) {
+				// TODO Auto-generated catch block
+				log.error("Not able to load paymentConfig file ");
+			}
+		}
+		Boolean edisFlag = AppConfig.optBoolean("enable.edis", false);
+		// registering DB JMX monitoring
+		try {
+			Monitor.registerBean(AppConfig.getValue("omnesys.jmx.beans.SESSION_DB"));
+			SessionDBPool.MONITOR_SESSION_DB = AppConfig.getValue("omnesys.jmx.beans.SESSION_DB");
+			SessionDBPool.initTomcatDataSource();
+
+			//QuoteDBPool we are not using it anywhere apart from cache loader.
+			/* Monitor.registerBean(AppConfig.getValue("omnesys.jmx.beans.QUOTE_DB"));
+			QuoteDataDBPool.MONITOR_QUOTE_DB = AppConfig.getValue("omnesys.jmx.beans.QUOTE_DB");*/
+
+			QuoteDataDBPool.initTomcatDataSource();
+
+			if(AppConfig.optBoolean("enable.basket.order", false)) {
+				Monitor.registerBean(AppConfig.getValue("omnesys.jmx.beans.TRADE_DB"));
+				TradeDBPool.MONITOR_TRADE_DB = AppConfig.getValue("omnesys.jmx.beans.TRADE_DB");
+				TradeDBPool.initTomcatDataSource();
+			}
+			if(edisFlag) {
+				
+				//EdisDBPool, we are not using it anywhere apart from cache loader.
+				EdisDBPool.initTomcatDataSource();
+			}
+		} catch (Exception ex) {
+			log.error("error initializing dbpool", ex);
+		}
+
+		// registering API JMX monitoring
+		try {
+			OmnesysJMXBeans.registerBeans();
+		} catch (Exception ex) {
+			log.error("", ex);
+		}
+
+		try {
+			if(AppConfig.optBoolean("nagios.nsca.monitor.enable",false))
+				NagiosPassiveMonitor.register(AppConfig.getProperties());
+			else
+				NagiosPassiveMonitor.isMonitorEnabled = false;
+		} catch (Exception e) {
+			NagiosPassiveMonitor.isMonitorEnabled = false;
+			log.error("", e);
+		}
+//		
+		try {
+			if(edisFlag) {
+				NonPoaClientDetails.loadClientDetails();
+			}
+		}
+		catch (Exception e) {
+			log.error("Not able to load NonPoaClientDetails ");
+		}
+		Connection conn = null;
+		try {
+
+			conn = QuoteDataDBPool.getInstance().getConnection();
+			List<Symbol> symbols = TRSymbolMap.getSymbols(conn);
+
+			SBU2SymbolCache.getInstance().addKey(SBU2RequestFields.SYMBOL_ID, SBU2RequestFields.TR_SYMBOL_ID);
+			SBU2SymbolCache.addSymbols(symbols);
+
+			SBU2SymbolCache cache = SBU2SymbolCache.getInstance();
+
+			String sbinSymbol = cache.getByField(SBU2RequestFields.TR_SYMBOL_ID, "SBIN-EQ_NSE").toString();
+
+			log.debug("loaded " + symbols.size() + " symbols, look up test : SBIN-EQ_NSE: " + sbinSymbol);
+
+		} catch (Exception e) {
+			log.error("Exception", e);
+		} finally {
+			Helper.closeConnection(conn);
+			QuoteDataDBPool.getInstance().releasePool();
+		}
+
+	}
+
+	public static void setLogger(String file) throws Exception {
+
+		Properties properties = new Properties();
+		FileInputStream _f = new FileInputStream(file);
+		properties.load(_f);
+		_f.close();
+
+		Logger.setLogger(properties);
+	}
+
+	public void contextDestroyed(ServletContextEvent sce) {
+		try {
+			//log.info("Closing db pools..");
+			SessionDBPool.getInstance().releasePool();
+			TradeDBPool.getInstance().releasePool();
+		} catch (Exception e) {
+			log.error("error in closing Database pool");
+		}
+//
+		try {
+			Monitor.release();
+		} catch (Exception e) {
+			log.error("Error while unregistering monitoring beans", e);
+		}
+//
+		try {
+			log.close();
+		} catch (Exception e) {
+			System.err.println(e);
+		}
+	}
+}
+
+
+

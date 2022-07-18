@@ -1,0 +1,50 @@
+<!DOCTYPE web-app PUBLIC
+ "-//Sun Microsystems, Inc.//DTD Web Application 2.3//EN"
+ "http://java.sun.com/dtd/web-app_2_3.dtd" >
+
+<web-app>
+  <display-name>Archetype Created Web Application</display-name>
+  <listener>
+  	<listener-class>com.ApplicationContextListener</listener-class>
+  </listener>
+  <servlet>
+  	<servlet-name>CreateUser</servlet-name>
+  	<display-name>CreateUser</display-name>
+  	<description></description>
+  	<servlet-class>com.CreateUser</servlet-class>
+  </servlet>
+  <servlet>
+  	<servlet-name>CreateEmployee</servlet-name>
+  	<display-name>CreateEmployee</display-name>
+  	<description></description>
+  	<servlet-class>com.CreateEmployee</servlet-class>
+  </servlet>
+  <servlet>
+  	<servlet-name>ListEmployee</servlet-name>
+  	<display-name>ListEmployee</display-name>
+  	<description></description>
+  	<servlet-class>com.ListEmployee</servlet-class>
+  </servlet>
+  <servlet>
+  	<servlet-name>DeleteEmployee</servlet-name>
+  	<display-name>DeleteEmployee</display-name>
+  	<description></description>
+  	<servlet-class>com.DeleteEmployee</servlet-class>
+  </servlet>
+  <servlet-mapping>
+  	<servlet-name>CreateUser</servlet-name>
+  	<url-pattern>/CreateUser</url-pattern>
+  </servlet-mapping>
+  <servlet-mapping>
+  	<servlet-name>CreateEmployee</servlet-name>
+  	<url-pattern>/CreateEmployee</url-pattern>
+  </servlet-mapping>
+  <servlet-mapping>
+  	<servlet-name>ListEmployee</servlet-name>
+  	<url-pattern>/ListEmployee</url-pattern>
+  </servlet-mapping>
+  <servlet-mapping>
+  	<servlet-name>DeleteEmployee</servlet-name>
+  	<url-pattern>/DeleteEmployee</url-pattern>
+  </servlet-mapping>
+</web-app>
